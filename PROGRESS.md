@@ -15,6 +15,8 @@
 - **Docker 部署配置就绪**（2026-08-21）：端口**全项目统一 8182**（`docker-compose.yml` `ports: "8182:8182"`，容器内 uvicorn 也监听 8182）。Dockerfile 用 `npm ci`（已本机验证 lockfile 同步、build 通过）+ pip 装依赖 + 自带 `HEALTHCHECK` 打 `/api/health`；`.dockerignore` 排除 `.venv/node_modules/dist/__pycache__/out.mp4`。删掉了冗余的 `backend/Dockerfile`（会 build 出没前端的镜像、且单独 build 时根 `.dockerignore` 不生效）。发布用：镜像 tag `0.1-beta`，服务器拉取用 `docker-compose.hub.yml`，步骤见 README「发布到 Docker Hub」。
 - **已实跑通 build → 本地冒烟 → push（2026-08-22）**：在装了 Docker Desktop 4.87 的开发机上 `docker build` 成功（linux/amd64）；本地起容器 `/api/health` 秒回 `200 {"ok":true}`；`docker push` 成功。镜像 **`yasin27878/douyin-dewatermark:0.1-beta`**（public，amd64，约 63MB，digest `sha256:9503d529…`）已在 Docker Hub。
   - ⚠️ 环境坑：这台机器的 `docker` 不在 Git Bash PATH 里，需用绝对路径 `"/c/Users/admin/AppData/Local/Programs/DockerDesktop/resources/bin/docker.exe"`（或 export 该 bin 到 PATH）；WSL2 首次要先 `wsl --install`+重启，引擎才起得来。
+- **代码已上传 GitHub（2026-08-22）**：`git init`(main) + 首个 commit → 推送到 https://github.com/Yasin27878/douyin-dewatermark 。重写了 `.gitignore` 排除 `.venv`/`node_modules`/`__pycache__`/`out.mp4`(他人视频)/`.env`/cookie 文件；密钥扫描确认项目代码零硬编码凭据（访客 cookie 运行时动态获取 + 写系统临时目录）。`gh` CLI 未装，走「网页建空库 + `git push`」，认证用 Git Credential Manager 浏览器 OAuth（凭据存 Windows 凭据管理器）。
+- **CI 自动化就绪（2026-08-22）**：`.github/workflows/docker-publish.yml` —— push `main` → 发 `:latest`、push git tag → 发同名版本 tag、始终附短 commit-sha tag；buildx 一次出 **amd64 + arm64 多架构** + gha 缓存。凭据走仓库 Secrets `DOCKERHUB_USERNAME`/`DOCKERHUB_TOKEN`（Docker Hub Access Token，用户自行在 GitHub 仓库 Settings 配，我不经手 token）。配好 Secrets 后 `git push` 即自动 build+push，无需再手动。
 
 ## 修复过的关键坑（非显然）
 1. 短链跟随后是 `iesdouyin.com/share/video/<id>`，yt-dlp 不认 → 规范化成 `www.douyin.com/video/<id>`（`parser`：只拼 `/video/`，因为 yt-dlp DouyinIE 只认 `/video/<id>`，detail 接口本身按 aweme_id 取，不分 video/note）。
@@ -24,7 +26,7 @@
    - ⚠️ 陷阱：同级的 `download_url_list` 反而是**带水印**版本（模板含 `-water`），千万别用；要用 `url_list`。
 
 ## 还没做 ⏳
-1. **在服务器上拉取运行并验证**：镜像已发布（`yasin27878/douyin-dewatermark:0.1-beta`，amd64）。服务器上 `docker run -d -p 8182:8182 --restart unless-stopped yasin27878/douyin-dewatermark:0.1-beta`（或 `docker compose -f docker-compose.hub.yml up -d`），放行 8182 端口，访问 `http://<IP>:8182`。⚠️ 服务器若为 ARM，需另出 arm64 镜像（`docker buildx --platform linux/arm64,linux/amd64 … --push`）。
+1. **在服务器上拉取运行并验证**：镜像已发布（`yasin27878/douyin-dewatermark:0.1-beta`，amd64）。服务器上 `docker run -d -p 8182:8182 --restart unless-stopped yasin27878/douyin-dewatermark:0.1-beta`（或 `docker compose -f docker-compose.hub.yml up -d`），放行 8182 端口，访问 `http://<IP>:8182`。✅ 架构已不是问题：CI 一次出 `amd64` + `arm64` 多架构，ARM 服务器直接 `docker pull` 即可。
 2. **Android 分享直达**：需 HTTPS 域名 → 填 `Caddyfile` → `docker compose --profile https up -d --build`（Caddy 反代容器内 `app:8182`，走 80/443）→ 手机 Chrome 安装 PWA。
 
 ## 待观察
