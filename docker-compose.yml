@@ -1,0 +1,33 @@
+services:
+  app:
+    build: .
+    image: yasin27878/douyin-dewatermark:0.1-beta
+    container_name: douyin-dewatermark
+    ports:
+      # 宿主:容器 都用 8182。改对外端口只动左边的数字。
+      - "8182:8182"
+    environment:
+      PARSE_CACHE_TTL: "600"
+      # 抖音换 CDN 导致下载失败时，在这里补充媒体白名单（逗号分隔）：
+      # ALLOWED_MEDIA_HOSTS: "douyinvod.com,douyinpic.com,byteimg.com,..."
+    restart: unless-stopped
+
+  # 可选：给一个域名自动签发 HTTPS（PWA 安装 / 抖音分享目标在真机上需要 HTTPS）。
+  # 启用：先在 Caddyfile 填好域名，再 `docker compose --profile https up -d`
+  caddy:
+    image: caddy:2
+    profiles: ["https"]
+    depends_on:
+      - app
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    restart: unless-stopped
+
+volumes:
+  caddy_data:
+  caddy_config:

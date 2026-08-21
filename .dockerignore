@@ -1,0 +1,11 @@
+.git
+.gitignore
+**/node_modules
+**/dist
+**/__pycache__
+**/*.pyc
+**/.venv
+# 测试样片与文档不需要进镜像/构建上下文
+out.mp4
+*.md
+PROGRESS.md

@@ -1,0 +1,17 @@
+# 在服务器上拉取 Docker Hub 镜像直接运行（无需在服务器上构建）。
+# 用法：
+#   1) 把下面的 image 换成你 push 上去的名字（见 README「发布到 Docker Hub」）
+#   2) docker compose -f docker-compose.hub.yml up -d
+#   3) 访问 http://<服务器IP>:8182
+# 健康检查、端口都已内置在镜像里，无需额外配置；也无需任何密钥/环境变量。
+services:
+  app:
+    image: yasin27878/douyin-dewatermark:0.1-beta
+    container_name: douyin-dewatermark
+    ports:
+      - "8182:8182"
+    environment:
+      PARSE_CACHE_TTL: "600"
+      # 抖音换 CDN 导致下载失败时，在这里补充媒体白名单（逗号分隔）：
+      # ALLOWED_MEDIA_HOSTS: "douyinvod.com,douyinpic.com,byteimg.com,..."
+    restart: unless-stopped

@@ -1,0 +1,44 @@
+# ── Python ──
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.venv/
+venv/
+
+# ── 环境变量 / 密钥（切勿入库）──
+.env
+*.env
+.env.*
+*.pem
+*.key
+secrets.*
+
+# ── 运行时产物：访客 cookie 文件（隐私，勿入库）──
+*cookie*.txt
+cookies.txt
+*.cookie
+
+# ── Node ──
+node_modules/
+
+# ── 构建产物 ──
+frontend/dist/
+dist/
+build/
+
+# ── 下载 / 媒体样片（体积大 + 他人版权，勿入库）──
+out.mp4
+*.mp4
+*.mov
+*.mkv
+*.webm
+
+# ── 日志 ──
+*.log
+
+# ── 编辑器 / 系统 ──
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

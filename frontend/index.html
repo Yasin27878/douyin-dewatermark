@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#0b0b0f" />
+    <meta name="description" content="粘贴抖音分享链接，获取无水印原始视频" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" href="/icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/icon.svg" />
+    <title>抖音去水印</title>
+  </head>
+  <body>
+    <main class="app">
+      <header class="hero">
+        <h1>抖音去水印</h1>
+        <p class="sub">粘贴分享链接 → 获取无水印原视频</p>
+      </header>
+
+      <form id="form" class="panel" autocomplete="off">
+        <textarea
+          id="input"
+          rows="3"
+          placeholder="把抖音的分享文案或链接粘到这里…"
+        ></textarea>
+        <button id="go" type="submit">解析</button>
+      </form>
+
+      <p id="status" class="status" hidden></p>
+      <section id="result" class="result" hidden></section>
+
+      <footer class="foot">
+        仅供个人学习备份使用，请尊重原作者版权。
+      </footer>
+    </main>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

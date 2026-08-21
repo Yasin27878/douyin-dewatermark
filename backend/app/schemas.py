@@ -1,0 +1,21 @@
+"""API 响应数据模型。"""
+from __future__ import annotations
+
+from pydantic import BaseModel
+
+
+class MediaImage(BaseModel):
+    url: str                       # 原始 CDN 直链
+    download_url: str | None = None  # 走本服务代理的下载地址
+
+
+class ParseResult(BaseModel):
+    type: str                      # "video" | "images"
+    source_url: str               # 归一化后的来源链接
+    title: str | None = None
+    author: str | None = None
+    cover: str | None = None       # 封面
+    duration: float | None = None  # 秒
+    video_url: str | None = None   # 无水印视频 CDN 直链
+    download_url: str | None = None  # 走本服务代理的视频下载地址
+    images: list[MediaImage] = []  # 图集
