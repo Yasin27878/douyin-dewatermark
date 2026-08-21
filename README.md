@@ -1,5 +1,7 @@
 # 抖音去水印
 
+[![Build & Push](https://github.com/Yasin27878/douyin-dewatermark/actions/workflows/docker-publish.yml/badge.svg)](https://github.com/Yasin27878/douyin-dewatermark/actions/workflows/docker-publish.yml)
+
 粘贴抖音分享链接 → 获取**无水印原始视频**（也支持图集）。
 
 - **后端**：FastAPI + [yt-dlp](https://github.com/yt-dlp/yt-dlp) 解析 + 带 Referer 的流式下载代理。
@@ -67,7 +69,9 @@ docker compose up -d --build      # 访问 http://<服务器IP>:8182
 
 ## 发布到 Docker Hub
 
-> 需要一台装了 Docker 的机器（本项目开发机未装 Docker）。镜像**自包含**：访客 cookie 在运行时自动获取，**不需要任何密钥 / 环境变量**，拉下来直接跑。
+> 镜像**自包含**：访客 cookie 在运行时自动获取，**不需要任何密钥 / 环境变量**，拉下来直接跑。
+>
+> **推荐用 CI 自动发布**：仓库已带 [.github/workflows/docker-publish.yml](.github/workflows/docker-publish.yml) —— 推到 `main` 自动发 `latest`、打 tag（如 `git tag 0.1-beta && git push origin 0.1-beta`）自动发对应版本号，一次出 `amd64` + `arm64` 多架构。只需在 GitHub 仓库 **Settings → Secrets and variables → Actions** 配好 `DOCKERHUB_USERNAME` 与 `DOCKERHUB_TOKEN`（Docker Hub Access Token）。下面是手动发布方式：
 
 ```bash
 # 1) 登录 Docker Hub

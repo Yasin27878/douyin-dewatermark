@@ -1,0 +1,61 @@
+name: Build & Push Docker image
+
+# 触发：推送到 main（发 latest）、推送任意 tag（发对应版本号，如 0.1-beta）、或手动运行。
+on:
+  push:
+    branches: [ main ]
+    tags: [ '*' ]
+  workflow_dispatch:
+
+# 同一 ref 连续推送时，取消尚在进行的旧构建，省额度。
+concurrency:
+  group: docker-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # 多架构需要 QEMU 模拟 arm64
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # 登录 Docker Hub —— 凭据从仓库 Secrets 读取，绝不写进代码
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # 自动生成镜像 tags / labels：
+      #   - 推到默认分支(main) -> latest
+      #   - 推 git tag         -> 同名 tag（例：git tag 0.1-beta -> 镜像 :0.1-beta）
+      #   - 始终附带一个短 commit sha tag，便于溯源
+      - name: Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: yasin27878/douyin-dewatermark
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=ref,event=tag
+            type=sha,format=short
+
+      - name: Build & push (amd64 + arm64)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
