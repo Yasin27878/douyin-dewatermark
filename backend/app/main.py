@@ -78,8 +78,9 @@ def api_parse(url: str = Query(..., description="抖音分享文案或链接")):
 async def api_download(
     url: str = Query(..., description="媒体 CDN 直链"),
     filename: str = Query("douyin.mp4"),
+    inline: bool = Query(False, description="内联打开（浏览器直接显示/播放）而非强制下载"),
 ):
-    return await stream_download(url, filename)
+    return await stream_download(url, filename, inline=inline)
 
 
 @app.get("/api/health")

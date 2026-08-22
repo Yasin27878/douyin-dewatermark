@@ -20,13 +20,15 @@ _HEADERS = {
 }
 
 
-def _content_disposition(filename: str) -> str:
+def _content_disposition(filename: str, inline: bool = False) -> str:
     # 同时给 ASCII 回退与 UTF-8（filename*），中文文件名也能正常下载。
+    # inline=True：让浏览器直接打开/播放（图片显示、视频播放），而非强制下载。
+    dtype = "inline" if inline else "attachment"
     ascii_fallback = filename.encode("ascii", "ignore").decode() or "download"
-    return f"attachment; filename=\"{ascii_fallback}\"; filename*=UTF-8''{quote(filename)}"
+    return f"{dtype}; filename=\"{ascii_fallback}\"; filename*=UTF-8''{quote(filename)}"
 
 
-async def stream_download(url: str, filename: str) -> StreamingResponse:
+async def stream_download(url: str, filename: str, inline: bool = False) -> StreamingResponse:
     if not is_allowed_media_host(url):
         raise HTTPException(status_code=400, detail="媒体地址不在允许的 CDN 白名单内")
 
@@ -54,7 +56,7 @@ async def stream_download(url: str, filename: str) -> StreamingResponse:
             await resp.aclose()
             await client.aclose()
 
-    headers = {"Content-Disposition": _content_disposition(filename)}
+    headers = {"Content-Disposition": _content_disposition(filename, inline)}
     if "content-length" in resp.headers:
         headers["Content-Length"] = resp.headers["content-length"]
     return StreamingResponse(body(), media_type=media_type, headers=headers)
