@@ -1,10 +1,13 @@
 name: Build & Push Docker image
 
-# 触发：推送到 main（发 latest）、推送任意 tag（发对应版本号，如 0.1-beta）、或手动运行。
+# 触发与版本策略（语义化版本 x.y.z，起始 1.0.0，git tag 为版本号唯一来源）：
+#   - 推送到 main            -> 取最新 vX.Y.Z tag 的 patch +1（无 tag 则 1.0.0），打「版本号 + latest」，并把新版本写回 tag
+#   - 推送 vX.Y.Z 形式的 tag -> 直接采用该 tag 作为版本号（手动升 minor/major 的入口），打「版本号 + latest」，不再自增
+#   - 手动运行(workflow_dispatch) -> 同 main，自动 patch +1
 on:
   push:
     branches: [ main ]
-    tags: [ '*' ]
+    tags: [ 'v*.*.*' ]
   workflow_dispatch:
 
 # 同一 ref 连续推送时，取消尚在进行的旧构建，省额度。
@@ -16,10 +19,41 @@ jobs:
   build-push:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write        # 需要写权限：push 到 main 后自动创建并推送版本 tag
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0      # 拉取完整历史与全部 tag，用于计算下一个版本号
+
+      # 计算本次构建的语义化版本号 x.y.z
+      #   - tag 触发：直接用 tag 名（去掉前缀 v）
+      #   - main / 手动触发：取最新 vX.Y.Z tag 的 patch +1；没有 tag 则从 1.0.0 开始
+      - name: 计算版本号
+        id: ver
+        env:
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          if [ "$REF_TYPE" = "tag" ]; then
+            version="${REF_NAME#v}"
+            create_tag=false
+          else
+            latest="$(git tag -l 'v*.*.*' | sort -V | tail -n1)"
+            if [ -z "$latest" ]; then
+              version="1.0.0"
+            else
+              base="${latest#v}"
+              major="${base%%.*}"; rest="${base#*.}"
+              minor="${rest%%.*}"; patch="${rest#*.}"
+              version="${major}.${minor}.$((patch + 1))"
+            fi
+            create_tag=true
+          fi
+          echo "version=$version"       >> "$GITHUB_OUTPUT"
+          echo "create_tag=$create_tag" >> "$GITHUB_OUTPUT"
+          echo "本次版本号：$version (create_tag=$create_tag)"
 
       # 多架构需要 QEMU 模拟 arm64
       - name: Set up QEMU
@@ -35,19 +69,15 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      # 自动生成镜像 tags / labels：
-      #   - 推到默认分支(main) -> latest
-      #   - 推 git tag         -> 同名 tag（例：git tag 0.1-beta -> 镜像 :0.1-beta）
-      #   - 始终附带一个短 commit sha tag，便于溯源
+      # 生成镜像 tags / labels：语义化版本号 x.y.z + latest
       - name: Docker metadata
         id: meta
         uses: docker/metadata-action@v5
         with:
           images: yasin27878/douyin-dewatermark
           tags: |
-            type=raw,value=latest,enable={{is_default_branch}}
-            type=ref,event=tag
-            type=sha,format=short
+            type=raw,value=${{ steps.ver.outputs.version }}
+            type=raw,value=latest
 
       - name: Build & push (amd64 + arm64)
         uses: docker/build-push-action@v6
@@ -59,3 +89,15 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      # 镜像发布成功后，再把版本号写回 git tag。
+      # 用默认 GITHUB_TOKEN 推送 tag 不会再次触发本工作流（GitHub 会抑制该 token 引发的递归运行）。
+      - name: 创建并推送版本 tag
+        if: steps.ver.outputs.create_tag == 'true'
+        run: |
+          set -euo pipefail
+          v="v${{ steps.ver.outputs.version }}"
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag "$v"
+          git push origin "$v"
