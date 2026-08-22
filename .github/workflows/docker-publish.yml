@@ -101,3 +101,15 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git tag "$v"
           git push origin "$v"
+
+      # 把 README 同步为 Docker Hub 的项目简介（Overview），访客能看到说明与 GitHub 链接。
+      # 失败不影响镜像发布（continue-on-error）；若报 401/403，说明 token 权限不够，见 README 说明。
+      - name: 同步 Docker Hub 项目简介
+        uses: peter-evans/dockerhub-description@v4
+        continue-on-error: true
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          repository: yasin27878/douyin-dewatermark
+          readme-filepath: ./README.md
+          short-description: "抖音去水印：粘贴分享链接，拿无水印原视频/图集"
