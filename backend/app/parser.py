@@ -1,15 +1,18 @@
-"""把抖音链接解析成标准化结果（视频 / 图集）。
+"""把分享链接解析成标准化结果（视频 / 图集）。
+
+支持抖音、西瓜视频、小红书、B站（哪些平台可解由 yt-dlp 的 extractor 决定，见 platforms.py）。
 
 流程：
-1. 跟随短链/分享页重定向，一次请求同时拿到最终 URL 和分享页 HTML。
-2. **图文帖（图集）**：抖音分享页（iesdouyin）会把内容服务端渲染进
+1. 跟随短链/分享页重定向拿到规范 URL。短链（v.douyin.com / xhslink.com / b23.tv /
+   v.ixigua.com）yt-dlp 不认，必须先解析成规范域名。
+2. **抖音图文帖（图集）**：抖音分享页（iesdouyin）会把内容服务端渲染进
    `window._ROUTER_DATA`，其中 `images[*].url_list` 就是**无水印**大图直链
    （注意 `download_url_list` 反而是带水印版本，不能用）。这条路不依赖签名，最稳。
-3. **视频**：交给 yt-dlp（抖音接口/签名的适配由其社区维护），规范化成它认识的
-   `https://www.douyin.com/video/<id>` 再解析；cookie 相关报错时刷新一次重试。
+3. **视频（各平台）**：交给 yt-dlp。抖音会先规范化成 `https://www.douyin.com/video/<id>`；
+   其它平台把重定向后的规范 URL 直接交给 yt-dlp。字节系（抖音/西瓜）cookie 报错时刷新重试。
 
-维护要点：视频解析失败时，第一步永远是升级 yt-dlp（`pip install -U yt-dlp`
-或重建镜像）。图集解析失败通常是分享页结构变了，看 `_ROUTER_DATA` 的取值路径。
+维护要点：解析失败时，第一步永远是升级 yt-dlp（`pip install -U yt-dlp` 或重建镜像）。
+抖音图集解析失败通常是分享页结构变了，看 `_ROUTER_DATA` 的取值路径。
 """
 from __future__ import annotations
 
@@ -21,6 +24,7 @@ import yt_dlp
 
 from .config import USER_AGENT
 from .cookies import get_cookiefile, get_cookies
+from .platforms import Platform, detect_source
 from .schemas import MediaImage, ParseResult
 
 # 从"复制此链接，打开抖音…"这类整段分享文案里抽出真正的 URL。
@@ -34,28 +38,32 @@ _MODAL_RE = re.compile(r"[?&](?:modal_id|aweme_id)=(\d+)")
 # 分享页内嵌的服务端渲染数据
 _ROUTER_DATA_RE = re.compile(r"window\._ROUTER_DATA\s*=\s*(\{.*?\})\s*</script>", re.S)
 
-# 触发"抓分享页 HTML"的链接特征（短链 / 分享页 / 图文帖）
-_RESOLVE_HINTS = ("v.douyin.com", "iesdouyin.com", "/share/", "/note/", "/slides/")
+# 需要跟随重定向拿规范 URL 的短链域名（yt-dlp 只认规范域名，不认这些短链）。
+# 小红书分享短链有 xhslink.com 和 xhslink.cn 两种。
+_SHORT_LINK_HOSTS = ("v.douyin.com", "xhslink.com", "xhslink.cn", "b23.tv", "v.ixigua.com")
+
+# 触发"抓抖音分享页 HTML"的链接特征（短链 / 分享页 / 图文帖）——图文帖大图内嵌其中。
+_DOUYIN_HTML_HINTS = ("v.douyin.com", "iesdouyin.com", "/share/", "/note/", "/slides/")
 
 _IMAGE_EXTS = {"jpg", "jpeg", "png", "webp", "heic", "gif", "bmp"}
 
-_HTTP_HEADERS = {
-    "User-Agent": USER_AGENT,
-    "Referer": "https://www.douyin.com/",
-    "Accept-Language": "zh-CN,zh;q=0.9",
-}
-
+# yt-dlp 基础参数；http_headers（含 Referer）与 cookiefile 按平台在 _run_ydl 里注入。
 _YDL_OPTS = {
     "quiet": True,
     "no_warnings": True,
     "skip_download": True,
     "noplaylist": False,  # 图集会以 playlist 形式返回，需要保留
     "extract_flat": False,
-    "http_headers": {
-        "User-Agent": USER_AGENT,
-        "Referer": "https://www.douyin.com/",
-    },
 }
+
+
+def _http_headers(platform: Platform | None) -> dict[str, str]:
+    """构造抓页面/重定向用的请求头，UA 与 Referer 按平台取。"""
+    ua = platform.user_agent if platform else USER_AGENT
+    headers = {"User-Agent": ua, "Accept-Language": "zh-CN,zh;q=0.9"}
+    if platform and platform.referer:
+        headers["Referer"] = platform.referer
+    return headers
 
 
 def extract_url(text: str) -> str | None:
@@ -67,23 +75,32 @@ def extract_url(text: str) -> str | None:
 
 
 def parse(url: str) -> ParseResult:
-    """解析单条抖音链接，返回标准化结果。可能抛异常，由调用方兜底。"""
-    final_url, html = _resolve(url)
-    aweme_id = _extract_id(final_url) or _extract_id(url)
+    """解析单条分享链接，返回标准化结果。可能抛异常，由调用方兜底。"""
+    platform = detect_source(url)
+    final_url, html = _resolve(url, platform)
+    # 短链重定向后域名可能变化（如 b23.tv → bilibili.com），按最终 URL 重新判定平台。
+    platform = detect_source(final_url) or platform
 
+    if platform and platform.key == "douyin":
+        return _parse_douyin(url, final_url, html, platform)
+    return _parse_generic(final_url or url, platform)
+
+
+def _parse_douyin(url: str, final_url: str, html: str | None, platform: Platform) -> ParseResult:
     # 1) 图文帖：分享页 _ROUTER_DATA 里直接有无水印大图
     images = _images_from_html(html, final_url)
     if images:
         return images
 
     # 2) 视频：交给 yt-dlp（它维护抖音签名/格式适配）
+    aweme_id = _extract_id(final_url) or _extract_id(url)
     video_url = f"https://www.douyin.com/video/{aweme_id}" if aweme_id else final_url
     try:
-        info = _run_ydl(video_url)
+        info = _run_ydl(video_url, platform)
     except yt_dlp.utils.DownloadError as e:
         msg = str(e).lower()
         if "cookie" in msg:
-            info = _run_ydl(video_url, force_cookies=True)
+            info = _run_ydl(video_url, platform, force_cookies=True)
         elif aweme_id:
             # yt-dlp 抖音 extractor 只会解视频；若其实是图文帖，抓分享页兜底。
             fallback = _images_from_html(_fetch_share_html(aweme_id), video_url)
@@ -93,6 +110,20 @@ def parse(url: str) -> ParseResult:
         else:
             raise
     return _normalize(info, video_url)
+
+
+def _parse_generic(target_url: str, platform: Platform | None) -> ParseResult:
+    """西瓜 / 小红书 / B站：重定向后的规范 URL 直接交给 yt-dlp。"""
+    try:
+        info = _run_ydl(target_url, platform)
+    except yt_dlp.utils.DownloadError as e:
+        msg = str(e).lower()
+        # 字节系（西瓜）可用访客 cookie 重试；其它平台无对应 cookie，直接抛出。
+        if "cookie" in msg and platform and platform.use_guest_cookies:
+            info = _run_ydl(target_url, platform, force_cookies=True)
+        else:
+            raise
+    return _normalize(info, target_url)
 
 
 # ---------------------------------------------------------------------------
@@ -107,25 +138,41 @@ def _extract_id(url: str | None) -> str | None:
     return m.group(1) if m else None
 
 
-def _resolve(url: str) -> tuple[str, str | None]:
-    """跟随重定向，返回 (最终URL, HTML)。非分享类链接不抓 HTML（HTML 为 None）。"""
-    if not any(h in url for h in _RESOLVE_HINTS):
+def _resolve(url: str, platform: Platform | None) -> tuple[str, str | None]:
+    """跟随重定向，返回 (最终URL, HTML)。
+    - 短链（v.douyin.com / xhslink.com / b23.tv / v.ixigua.com）必须跟随重定向拿规范 URL。
+    - 抖音分享页额外返回 HTML（图文帖无水印大图内嵌其中）；其它平台不需要 HTML。
+    非短链、非抖音分享页的链接不抓取（HTML 为 None）。"""
+    want_html = (
+        platform is not None
+        and platform.key == "douyin"
+        and any(h in url for h in _DOUYIN_HTML_HINTS)
+    )
+    is_short = any(h in url for h in _SHORT_LINK_HOSTS)
+    if not want_html and not is_short:
         return url, None
+
+    cookies = get_cookies() if (platform and platform.use_guest_cookies) else None
     try:
         with httpx.Client(
-            follow_redirects=True, timeout=15, headers=_HTTP_HEADERS, cookies=get_cookies()
+            follow_redirects=True, timeout=15, headers=_http_headers(platform), cookies=cookies
         ) as hc:
             resp = hc.get(url)
-            return str(resp.url), resp.text
+            return str(resp.url), (resp.text if want_html else None)
     except httpx.HTTPError:
         return url, None
 
 
 def _fetch_share_html(aweme_id: str) -> str | None:
-    """兜底：直接抓 iesdouyin 图文分享页 HTML。"""
+    """兜底：直接抓 iesdouyin 图文分享页 HTML（抖音专用）。"""
+    headers = {
+        "User-Agent": USER_AGENT,
+        "Referer": "https://www.douyin.com/",
+        "Accept-Language": "zh-CN,zh;q=0.9",
+    }
     try:
         with httpx.Client(
-            follow_redirects=True, timeout=15, headers=_HTTP_HEADERS, cookies=get_cookies()
+            follow_redirects=True, timeout=15, headers=headers, cookies=get_cookies()
         ) as hc:
             resp = hc.get(f"https://www.iesdouyin.com/share/note/{aweme_id}/")
             return resp.text
@@ -205,9 +252,16 @@ def _author_name(item: dict) -> str | None:
     return author.get("nickname") or author.get("unique_id") or None
 
 
-def _run_ydl(url: str, force_cookies: bool = False) -> dict:
+def _run_ydl(url: str, platform: Platform | None, force_cookies: bool = False) -> dict:
     opts = dict(_YDL_OPTS)
-    opts["cookiefile"] = get_cookiefile(force=force_cookies)
+    ua = platform.user_agent if platform else USER_AGENT
+    headers = {"User-Agent": ua}
+    if platform and platform.referer:
+        headers["Referer"] = platform.referer
+    opts["http_headers"] = headers
+    # 仅字节系（抖音/西瓜）需要访客 cookie；其它平台不带（带的也是无关域名的，无意义）。
+    if platform and platform.use_guest_cookies:
+        opts["cookiefile"] = get_cookiefile(force=force_cookies)
     with yt_dlp.YoutubeDL(opts) as ydl:
         return ydl.extract_info(url, download=False)
 

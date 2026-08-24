@@ -24,7 +24,7 @@ def _match(host: str, patterns: list[str]) -> bool:
 
 
 def is_allowed_source(url: str) -> bool:
-    """输入解析链接是否来自允许的站点（抖音）。"""
+    """输入解析链接是否来自允许的平台（抖音 / 西瓜 / 小红书 / B站）。"""
     return _match(host_of(url), settings.allowed_source_hosts)
 
 

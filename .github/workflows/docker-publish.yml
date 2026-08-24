@@ -112,4 +112,4 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
           repository: yasin27878/douyin-dewatermark
           readme-filepath: ./README.md
-          short-description: "抖音去水印：粘贴分享链接，拿无水印原视频/图集"
+          short-description: "视频去水印：抖音/西瓜/小红书/B站，粘贴分享链接拿无水印原视频/图集"

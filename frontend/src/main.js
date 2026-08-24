@@ -83,6 +83,12 @@ function openableLink(downloadUrl) {
   return location.origin + downloadUrl + "&inline=1";
 }
 
+// 预览图（封面 / 图集缩略图）也走代理内联：直连 CDN 会被防盗链 403，
+// HTTPS 部署下直连 http 图还会被当混合内容拦掉。拿不到代理地址时回退原始直链。
+function previewSrc(proxiedUrl, rawUrl) {
+  return proxiedUrl ? openableLink(proxiedUrl) : rawUrl;
+}
+
 function metaLine(data) {
   const bits = [];
   if (data.author) bits.push(`@${data.author}`);
@@ -93,11 +99,16 @@ function metaLine(data) {
 function renderVideo(data) {
   const card = el("div", { class: "card" });
   if (data.cover) {
-    card.append(el("img", { class: "cover", src: data.cover, alt: "封面", loading: "lazy" }));
+    card.append(el("img", { class: "cover", src: previewSrc(data.cover_download_url, data.cover), alt: "封面", loading: "lazy" }));
   }
   card.append(el("h2", { class: "title", text: data.title || "无标题" }));
   const meta = metaLine(data);
   if (meta) card.append(el("p", { class: "meta", text: meta }));
+  if (data.platform === "B站") {
+    card.append(
+      el("p", { class: "note", text: "ℹ️ B站视频为音视频分离，此直链下载可能没有声音（后续版本再做合流）。" })
+    );
+  }
 
   const actions = el("div", { class: "actions" });
   const dl = el("a", {
@@ -124,7 +135,7 @@ function renderImages(data) {
   const grid = el("div", { class: "grid" });
   data.images.forEach((img, i) => {
     const cell = el("div", { class: "cell" });
-    cell.append(el("img", { src: img.url, alt: `图 ${i + 1}`, loading: "lazy" }));
+    cell.append(el("img", { src: previewSrc(img.download_url, img.url), alt: `图 ${i + 1}`, loading: "lazy" }));
     const bar = el("div", { class: "cell-actions" });
     bar.append(el("a", { class: "cell-btn", href: img.download_url, download: "", text: `下载 ${i + 1}` }));
     const cp = el("button", { class: "cell-btn", type: "button", text: "复制" });

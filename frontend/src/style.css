@@ -127,6 +127,15 @@ textarea:focus { border-color: var(--accent); }
 }
 .title { margin: 0; font-size: 16px; line-height: 1.4; }
 .meta { margin: 0; color: var(--muted); font-size: 13px; }
+.note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+  padding: 8px 10px;
+  background: var(--panel-2);
+  border-radius: 8px;
+}
 
 .actions { display: flex; gap: 10px; flex-wrap: wrap; }
 .actions .btn { flex: 1 1 auto; }

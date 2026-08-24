@@ -58,12 +58,18 @@ def _fetch_cookies() -> dict[str, str]:
     return cookies
 
 
+# 访客 cookie 要对字节系两个域名都生效：抖音走 .douyin.com，西瓜走 .ixigua.com
+# （ttwid 由 register 接口下发，service 本就是 www.ixigua.com，对两者都有效）。
+_COOKIE_DOMAINS = (".douyin.com", ".ixigua.com")
+
+
 def _write_netscape(cookies: dict[str, str], path: str) -> None:
     expires = int(time.time()) + 3600 * 24 * 180
     lines = ["# Netscape HTTP Cookie File\n"]
-    for name, value in cookies.items():
-        # domain, include_subdomains, path, secure, expiry, name, value
-        lines.append("\t".join([".douyin.com", "TRUE", "/", "FALSE", str(expires), name, value]) + "\n")
+    for domain in _COOKIE_DOMAINS:
+        for name, value in cookies.items():
+            # domain, include_subdomains, path, secure, expiry, name, value
+            lines.append("\t".join([domain, "TRUE", "/", "FALSE", str(expires), name, value]) + "\n")
     with open(path, "w", encoding="utf-8") as f:
         f.writelines(lines)
 

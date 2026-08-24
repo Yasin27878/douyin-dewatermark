@@ -10,19 +10,20 @@ from fastapi.staticfiles import StaticFiles
 
 from .config import settings
 from .parser import extract_url, parse
+from .platforms import detect_source
 from .proxy import stream_download
 from .schemas import ParseResult
 from .security import is_allowed_source
 
-app = FastAPI(title="抖音去水印", docs_url="/api/docs", openapi_url="/api/openapi.json")
+app = FastAPI(title="视频去水印", docs_url="/api/docs", openapi_url="/api/openapi.json")
 
 # 简单的内存 TTL 缓存：link -> (timestamp, ParseResult)
 _cache: dict[str, tuple[float, ParseResult]] = {}
 
 
 def _safe_filename(title: str | None, ext: str) -> str:
-    base = (title or "douyin").strip()
-    base = re.sub(r'[\\/:*?"<>|\r\n\t]+', "_", base)[:60].strip() or "douyin"
+    base = (title or "video").strip()
+    base = re.sub(r'[\\/:*?"<>|\r\n\t]+', "_", base)[:60].strip() or "video"
     return f"{base}.{ext}"
 
 
@@ -43,18 +44,23 @@ def _attach_download_urls(result: ParseResult) -> ParseResult:
     """把 CDN 直链包装成走本服务代理的下载地址。"""
     if result.video_url:
         result.download_url = _proxied(result.video_url, _safe_filename(result.title, "mp4"))
+    if result.cover:
+        # 封面预览也走代理：小红书/B站等 CDN 对图片同样有防盗链，直连 <img> 会 403。
+        result.cover_download_url = _proxied(
+            result.cover, _safe_filename(f"{result.title or 'cover'}", _img_ext(result.cover))
+        )
     for i, img in enumerate(result.images, start=1):
         img.download_url = _proxied(
-            img.url, _safe_filename(f"{result.title or 'douyin'}_{i}", _img_ext(img.url))
+            img.url, _safe_filename(f"{result.title or 'image'}_{i}", _img_ext(img.url))
         )
     return result
 
 
 @app.get("/api/parse", response_model=ParseResult)
-def api_parse(url: str = Query(..., description="抖音分享文案或链接")):
+def api_parse(url: str = Query(..., description="抖音 / 西瓜 / 小红书 / B站 分享文案或链接")):
     link = extract_url(url) or url.strip()
     if not is_allowed_source(link):
-        raise HTTPException(status_code=400, detail="仅支持抖音链接")
+        raise HTTPException(status_code=400, detail="仅支持抖音 / 西瓜 / 小红书 / B站 链接")
 
     now = time.time()
     cached = _cache.get(link)
@@ -69,6 +75,8 @@ def api_parse(url: str = Query(..., description="抖音分享文案或链接")):
     if not result.video_url and not result.images:
         raise HTTPException(status_code=502, detail="没有解析到可下载的媒体，试试升级 yt-dlp")
 
+    plat = detect_source(link)
+    result.platform = plat.name if plat else None
     result = _attach_download_urls(result)
     _cache[link] = (now, result)
     return result
