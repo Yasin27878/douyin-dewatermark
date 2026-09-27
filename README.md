@@ -32,6 +32,10 @@ docker compose -f docker-compose.hub.yml up -d
 ```bash
 docker run -d --name douyin-dewatermark -p 8182:8182 --restart unless-stopped \
   yasin27878/douyin-dewatermark:latest
+
+# 如需开启密码保护，添加 -e AUTH_PASSWORD 参数：
+docker run -d --name douyin-dewatermark -p 8182:8182 -e AUTH_PASSWORD="your_password" --restart unless-stopped \
+  yasin27878/douyin-dewatermark:latest
 ```
 
 对外端口改 `-p` 左边的数字。`docker ps` 里 STATUS 显示 healthy 即就绪。镜像自包含，访客 cookie 运行时自动获取，不需要任何密钥。
@@ -40,6 +44,7 @@ docker run -d --name douyin-dewatermark -p 8182:8182 --restart unless-stopped \
 
 | 变量 | 说明 | 默认 |
 | --- | --- | --- |
+| `AUTH_PASSWORD` | 可选：网页及 API 访问验证密码（设置后需输密码才可访问） | 留空（不启用验证） |
 | `ALLOWED_SOURCE_HOSTS` | 允许解析的来源站点 | 各平台域名并集，见 `platforms.py` |
 | `ALLOWED_MEDIA_HOSTS` | 允许下载代理转发的 CDN | 各平台 CDN 并集，见 `platforms.py` |
 | `PARSE_CACHE_TTL` | 解析结果缓存秒数 | `600` |

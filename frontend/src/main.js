@@ -6,6 +6,17 @@ const form = $("#form");
 const input = $("#input");
 const statusEl = $("#status");
 const resultEl = $("#result");
+const mainContent = $("#main-content");
+const authCard = $("#auth-card");
+const authForm = $("#auth-form");
+const authInput = $("#auth-password");
+const authStatus = $("#auth-status");
+const authSubmit = $("#auth-submit");
+const logoutBtn = $("#logout-btn");
+
+let isAuthRequired = false;
+let isAuthenticated = true;
+let pendingParseText = null;
 
 function setStatus(msg, kind = "") {
   if (!msg) {
@@ -167,6 +178,104 @@ function renderImages(data) {
   resultEl.hidden = false;
 }
 
+function showAuthScreen(errorMsg = "") {
+  mainContent.hidden = true;
+  authCard.hidden = false;
+  logoutBtn.hidden = true;
+  clearResult();
+  setStatus("");
+  if (errorMsg) {
+    authStatus.textContent = errorMsg;
+    authStatus.hidden = false;
+  } else {
+    authStatus.hidden = true;
+    authStatus.textContent = "";
+  }
+  authInput.value = "";
+  setTimeout(() => authInput.focus(), 50);
+}
+
+function showMainApp(showLogout = false) {
+  authCard.hidden = true;
+  mainContent.hidden = false;
+  logoutBtn.hidden = !showLogout;
+  authStatus.hidden = true;
+  authStatus.textContent = "";
+}
+
+async function checkAuth() {
+  try {
+    const res = await fetch("/api/auth/status");
+    if (!res.ok) throw new Error("Auth check failed");
+    const data = await res.json();
+    isAuthRequired = !!data.required;
+    isAuthenticated = !!data.authenticated;
+    if (isAuthRequired && !isAuthenticated) {
+      showAuthScreen();
+      return false;
+    } else {
+      showMainApp(isAuthRequired);
+      return true;
+    }
+  } catch {
+    showMainApp(false);
+    return true;
+  }
+}
+
+authForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const password = (authInput.value || "").trim();
+  if (!password) {
+    authStatus.textContent = "请输入访问密码";
+    authStatus.hidden = false;
+    authInput.focus();
+    return;
+  }
+
+  authSubmit.disabled = true;
+  authSubmit.textContent = "验证中…";
+  authStatus.hidden = true;
+
+  try {
+    const res = await fetch("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ password }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      throw new Error(data.detail || "密码错误，请重新输入");
+    }
+    isAuthenticated = true;
+    showMainApp(isAuthRequired);
+    if (pendingParseText) {
+      input.value = pendingParseText;
+      const target = pendingParseText;
+      pendingParseText = null;
+      doParse(target);
+    } else {
+      input.focus();
+    }
+  } catch (err) {
+    authStatus.textContent = err.message || "密码错误，请重新输入";
+    authStatus.hidden = false;
+    authInput.focus();
+    authInput.select();
+  } finally {
+    authSubmit.disabled = false;
+    authSubmit.textContent = "解锁访问";
+  }
+});
+
+logoutBtn.addEventListener("click", async () => {
+  try {
+    await fetch("/api/auth/logout", { method: "POST" });
+  } catch {}
+  isAuthenticated = false;
+  showAuthScreen("已退出登录，请重新输入密码");
+});
+
 async function doParse(text) {
   const value = (text || "").trim();
   if (!value) {
@@ -177,6 +286,12 @@ async function doParse(text) {
   clearResult();
   try {
     const res = await fetch(`/api/parse?url=${encodeURIComponent(value)}`);
+    if (res.status === 401) {
+      isAuthenticated = false;
+      pendingParseText = value;
+      showAuthScreen("访问未授权或登录已过期，请重新输入密码");
+      return;
+    }
     const data = await res.json();
     if (!res.ok) throw new Error(data.detail || `解析失败 (${res.status})`);
     if (data.type === "images") renderImages(data);
@@ -200,13 +315,23 @@ $("#clear").addEventListener("click", () => {
 });
 
 // PWA 分享目标 / 直接带参进入：?url= 或 ?text= 或 ?title=
-const params = new URLSearchParams(location.search);
-const shared = params.get("url") || params.get("text") || params.get("title");
-if (shared) {
-  input.value = shared;
-  history.replaceState(null, "", location.pathname); // 清掉参数，避免刷新重复解析
-  doParse(shared);
-}
+(async () => {
+  const params = new URLSearchParams(location.search);
+  const shared = params.get("url") || params.get("text") || params.get("title");
+  if (shared) {
+    history.replaceState(null, "", location.pathname); // 清掉参数，避免刷新重复解析
+  }
+
+  const ok = await checkAuth();
+  if (shared) {
+    if (ok) {
+      input.value = shared;
+      doParse(shared);
+    } else {
+      pendingParseText = shared;
+    }
+  }
+})();
 
 // 仅生产环境注册 Service Worker（开发时避免缓存干扰 HMR）
 if ("serviceWorker" in navigator && import.meta.env.PROD) {
@@ -214,3 +339,4 @@ if ("serviceWorker" in navigator && import.meta.env.PROD) {
     navigator.serviceWorker.register("/sw.js").catch(() => {});
   });
 }
+

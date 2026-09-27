@@ -17,6 +17,8 @@
   - ⚠️ 环境坑：这台机器的 `docker` 不在 Git Bash PATH 里，需用绝对路径 `"/c/Users/admin/AppData/Local/Programs/DockerDesktop/resources/bin/docker.exe"`（或 export 该 bin 到 PATH）；WSL2 首次要先 `wsl --install`+重启，引擎才起得来。
 - **代码已上传 GitHub（2026-08-22）**：`git init`(main) + 首个 commit → 推送到 https://github.com/Yasin27878/douyin-dewatermark 。重写了 `.gitignore` 排除 `.venv`/`node_modules`/`__pycache__`/`out.mp4`(他人视频)/`.env`/cookie 文件；密钥扫描确认项目代码零硬编码凭据（访客 cookie 运行时动态获取 + 写系统临时目录）。`gh` CLI 未装，走「网页建空库 + `git push`」，认证用 Git Credential Manager 浏览器 OAuth（凭据存 Windows 凭据管理器）。
 - **CI 自动化就绪（2026-08-22）**：`.github/workflows/docker-publish.yml` —— push `main` → 发 `:latest`、push git tag → 发同名版本 tag、始终附短 commit-sha tag；buildx 一次出 **amd64 + arm64 多架构** + gha 缓存。凭据走仓库 Secrets `DOCKERHUB_USERNAME`/`DOCKERHUB_TOKEN`（Docker Hub Access Token，用户自行在 GitHub 仓库 Settings 配，我不经手 token）。配好 Secrets 后 `git push` 即自动 build+push，无需再手动。
+- **可选访问密码验证就绪（2026-09-27）**：支持在 Docker 配置中通过 `AUTH_PASSWORD` 环境变量设置访问密码（可选值，默认留空不启用密码验证）。启用后：前端自动展示暗黑风「🔐 访问验证」卡片，未验证无法调用解析与下载；后端通过 HMAC-SHA256 签发带时效凭据写入 HttpOnly Cookie（防 XSS），单容器内无状态跨进程；支持右上角一键锁定/注销；保持 `/api/health` 免鉴权确保 Docker HEALTHCHECK 健康检查正常；支持 API 及外部播放器使用 Bearer / Basic Auth / `?pwd=` 参数；文档已全部同步更新。
+
 
 ## 修复过的关键坑（非显然）
 1. 短链跟随后是 `iesdouyin.com/share/video/<id>`，yt-dlp 不认 → 规范化成 `www.douyin.com/video/<id>`（`parser`：只拼 `/video/`，因为 yt-dlp DouyinIE 只认 `/video/<id>`，detail 接口本身按 aweme_id 取，不分 video/note）。

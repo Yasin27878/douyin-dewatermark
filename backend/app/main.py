@@ -5,14 +5,22 @@ import re
 import time
 from urllib.parse import quote
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import Cookie, Depends, FastAPI, Header, HTTPException, Query, Request, Response
 from fastapi.staticfiles import StaticFiles
 
+from .auth import (
+    COOKIE_NAME,
+    check_password,
+    create_token,
+    is_auth_enabled,
+    is_request_authenticated,
+    verify_auth,
+)
 from .config import settings
 from .parser import extract_url, parse
 from .platforms import detect_source
 from .proxy import stream_download
-from .schemas import ParseResult
+from .schemas import AuthStatusResponse, LoginRequest, LoginResponse, ParseResult
 from .security import is_allowed_source
 
 app = FastAPI(title="视频去水印", docs_url="/api/docs", openapi_url="/api/openapi.json")
@@ -56,7 +64,44 @@ def _attach_download_urls(result: ParseResult) -> ParseResult:
     return result
 
 
-@app.get("/api/parse", response_model=ParseResult)
+@app.get("/api/auth/status", response_model=AuthStatusResponse)
+def api_auth_status(
+    request: Request,
+    dwm_auth: str | None = Cookie(default=None),
+    authorization: str | None = Header(default=None),
+):
+    enabled = is_auth_enabled()
+    authenticated = is_request_authenticated(request, dwm_auth, authorization) if enabled else True
+    return AuthStatusResponse(required=enabled, authenticated=authenticated)
+
+
+@app.post("/api/auth/login", response_model=LoginResponse)
+def api_auth_login(req: LoginRequest, response: Response):
+    if not is_auth_enabled():
+        return LoginResponse(ok=True)
+
+    if not check_password(req.password):
+        raise HTTPException(status_code=401, detail="密码错误，请重新输入")
+
+    token = create_token()
+    response.set_cookie(
+        key=COOKIE_NAME,
+        value=token,
+        max_age=settings.auth_token_ttl,
+        httponly=True,
+        samesite="lax",
+        path="/",
+    )
+    return LoginResponse(ok=True, token=token)
+
+
+@app.post("/api/auth/logout")
+def api_auth_logout(response: Response):
+    response.delete_cookie(key=COOKIE_NAME, path="/")
+    return {"ok": True}
+
+
+@app.get("/api/parse", response_model=ParseResult, dependencies=[Depends(verify_auth)])
 def api_parse(url: str = Query(..., description="抖音 / 西瓜 / 小红书 / B站 分享文案或链接")):
     link = extract_url(url) or url.strip()
     if not is_allowed_source(link):
@@ -82,7 +127,7 @@ def api_parse(url: str = Query(..., description="抖音 / 西瓜 / 小红书 / B
     return result
 
 
-@app.get("/api/download")
+@app.get("/api/download", dependencies=[Depends(verify_auth)])
 async def api_download(
     url: str = Query(..., description="媒体 CDN 直链"),
     filename: str = Query("douyin.mp4"),

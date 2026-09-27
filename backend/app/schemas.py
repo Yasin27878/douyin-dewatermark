@@ -21,3 +21,18 @@ class ParseResult(BaseModel):
     video_url: str | None = None   # 无水印视频 CDN 直链
     download_url: str | None = None  # 走本服务代理的视频下载地址
     images: list[MediaImage] = []  # 图集
+
+
+class AuthStatusResponse(BaseModel):
+    required: bool
+    authenticated: bool
+
+
+class LoginRequest(BaseModel):
+    password: str
+
+
+class LoginResponse(BaseModel):
+    ok: bool
+    token: str | None = None
+

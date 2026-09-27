@@ -8,6 +8,8 @@ services:
       - "8182:8182"
     environment:
       PARSE_CACHE_TTL: "600"
+      # 可选：设置网页及 API 访问验证密码（留空或注释则不开启密码验证）：
+      # AUTH_PASSWORD: "your_password"
       # 平台换 CDN 导致下载失败时，在这里补充媒体白名单（逗号分隔）：
       # ALLOWED_MEDIA_HOSTS: "douyinvod.com,bilivideo.com,xhscdn.com,..."
     restart: unless-stopped

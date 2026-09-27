@@ -39,6 +39,12 @@ class Settings:
     # 访客 cookie 缓存时长（秒）。ttwid 有效期较长，这里定期刷新即可。
     cookie_ttl: int = int(os.environ.get("COOKIE_TTL", "1800"))
 
+    # 可选的网页及 API 访问保护密码。留空或未设置表示不启用密码验证。
+    auth_password: str = os.environ.get("AUTH_PASSWORD", "").strip()
+
+    # 密码验证凭据有效期（秒），默认 30 天。
+    auth_token_ttl: int = int(os.environ.get("AUTH_TOKEN_TTL", str(30 * 86400)))
+
     # 前端构建产物目录。Docker 里显式设为 /app/frontend/dist；
     # 本地开发若未设置，则回退到仓库内 frontend/dist（存在才挂载）。
     @property
